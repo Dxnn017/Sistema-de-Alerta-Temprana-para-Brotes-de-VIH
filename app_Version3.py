@@ -7,19 +7,23 @@ import numpy as np
 @st.cache_data
 def load_data():
     try:
+        # Cargar datos de predicción (2025-2030)
         df_pred = pd.read_csv('predicciones_alerta_vih_2025_2030_simulado.csv')
+        
+        # Cargar datos históricos (2015-2024)
         df_hist = pd.read_csv('DATASET_VIH.csv')
         
-        # Corrección de datos problemáticos de Lima 2024
-        lima_mask = (df_hist['Anio'] == 2024) & (df_hist['Departamento'] == 'Lima')
-        if lima_mask.any():
-            # Usar valores más realistas basados en tendencias anteriores
-            df_hist.loc[lima_mask & (df_hist['Sexo'] == 'Masculino'), 'CasosEstimados'] = 4000
-            df_hist.loc[lima_mask & (df_hist['Sexo'] == 'Femenino'), 'CasosEstimados'] = 1000
+        # Verificar y limpiar datos históricos
+        if 'Tendencia' not in df_hist.columns:
+            df_hist['Tendencia'] = 'Histórico'
+        
+        # Asegurar que los casos sean numéricos
+        df_hist['CasosEstimados'] = pd.to_numeric(df_hist['CasosEstimados'], errors='coerce')
+        df_hist = df_hist.dropna(subset=['CasosEstimados'])
         
         return df_pred, df_hist
     except Exception as e:
-        st.error(f"Error cargando datos: {e}")
+        st.error(f"Error cargando datos: {str(e)}")
         return pd.DataFrame(), pd.DataFrame()
 
 df_pred, df_hist = load_data()
@@ -42,16 +46,26 @@ st.markdown("""
 <style>
     .main-header {
         background: linear-gradient(90deg, #1f77b4, #ff7f0e);
-        padding: 1rem;
+        padding: 1.5rem;
         border-radius: 10px;
         color: white;
         margin-bottom: 2rem;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
     }
     .metric-container {
         background-color: #f0f2f6;
         padding: 1rem;
         border-radius: 10px;
         border-left: 4px solid #1f77b4;
+        margin-bottom: 1rem;
+    }
+    .alert-danger {
+        background-color: #f8d7da;
+        border: 1px solid #f5c6cb;
+        color: #721c24;
+        padding: 1rem;
+        border-radius: 5px;
+        margin: 1rem 0;
     }
     .alert-success {
         background-color: #d4edda;
@@ -61,13 +75,12 @@ st.markdown("""
         border-radius: 5px;
         margin: 1rem 0;
     }
-    .alert-warning {
-        background-color: #fff3cd;
-        border: 1px solid #ffeaa7;
-        color: #856404;
-        padding: 1rem;
-        border-radius: 5px;
-        margin: 1rem 0;
+    .stSelectbox, .stRadio {
+        margin-bottom: 1rem;
+    }
+    .stDataFrame {
+        border-radius: 10px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
 </style>
 """, unsafe_allow_html=True)
@@ -75,403 +88,353 @@ st.markdown("""
 # Título principal
 st.markdown("""
 <div class="main-header">
-    <h1>🦠 Sistema de Alerta Temprana para Brotes de VIH en Perú</h1>
-    <p>Consulta los casos estimados y predichos de VIH por Departamento, Sexo y Año. 
-    Sistema inspirado en la Sala Situacional VIH del MINSA Perú.</p>
+    <h1>🦠 Sistema de Alerta Temprana para VIH en Perú</h1>
+    <p>Visualización interactiva de predicciones 2025-2030 basadas en datos simulados</p>
 </div>
 """, unsafe_allow_html=True)
 
 # --- Barra lateral de filtros ---
 st.sidebar.header("🔍 Filtros de Consulta")
 
-# Obtener opciones únicas
+# Obtener opciones únicas del dataset de predicción
 available_years = sorted(df_pred['Anio'].unique())
 available_departments = sorted(df_pred['Departamento'].unique())
 available_sex = sorted(df_pred['Sexo'].unique())
 
 # Información sobre los datos
 st.sidebar.markdown("---")
-st.sidebar.markdown("**📊 Información de los datos:**")
-st.sidebar.write(f"• Años disponibles: {min(available_years)} - {max(available_years)}")
+st.sidebar.markdown("**📊 Datos de Predicción:**")
+st.sidebar.write(f"• Años: {min(available_years)}-{max(available_years)}")
 st.sidebar.write(f"• Departamentos: {len(available_departments)}")
-st.sidebar.write(f"• Total registros predicción: {len(df_pred)}")
-st.sidebar.write(f"• Total registros históricos: {len(df_hist)}")
+st.sidebar.write(f"• Total registros: {len(df_pred):,}")
 
 st.sidebar.markdown("---")
 
-# Filtros interactivos con keys únicos
+# Filtros interactivos
 year = st.sidebar.selectbox(
-    "📅 Año",
+    "📅 Año de predicción",
     options=available_years,
     index=0,
-    key="year_selector",
-    help="Selecciona el año para ver las predicciones"
+    key="year_selector"
 )
 
 departamento = st.sidebar.selectbox(
     "🏛️ Departamento",
     options=available_departments,
     index=0,
-    key="dept_selector",
-    help="Selecciona el departamento a analizar"
+    key="dept_selector"
 )
 
 sexo = st.sidebar.selectbox(
     "👥 Sexo",
     options=available_sex,
     index=0,
-    key="sex_selector",
-    help="Selecciona el sexo para el análisis"
+    key="sex_selector"
 )
 
 tipo_grafico = st.sidebar.radio(
-    "📈 Tipo de gráfico:",
+    "📈 Tipo de visualización",
     options=["Barras", "Líneas", "Área"],
     index=0,
-    key="chart_type_selector",
-    help="Selecciona el tipo de visualización"
+    key="chart_type_selector"
 )
 
 # Mostrar filtros actuales
 st.sidebar.markdown("---")
-st.sidebar.markdown("**🎯 Filtros actuales:**")
-st.sidebar.markdown(f"**Año:** {year}")
-st.sidebar.markdown(f"**Departamento:** {departamento}")
-st.sidebar.markdown(f"**Sexo:** {sexo}")
+st.sidebar.markdown("**🎯 Filtros aplicados:**")
+st.sidebar.markdown(f"- Año: **{year}**")
+st.sidebar.markdown(f"- Departamento: **{departamento}**")
+st.sidebar.markdown(f"- Sexo: **{sexo}**")
 
-# --- Función para obtener datos específicos ---
-def get_year_data(df, year, departamento, sexo):
-    """Filtra los datos para un año, departamento y sexo específicos"""
+# --- Funciones para procesamiento de datos ---
+def get_current_prediction(year, departamento, sexo):
+    """Obtiene los datos de predicción para la selección actual"""
     mask = (
-        (df['Anio'] == year) &
-        (df['Departamento'] == departamento) &
-        (df['Sexo'] == sexo)
-    )
-    return df[mask]
-
-def get_filtered_data(departamento, sexo):
-    """Obtiene todos los datos filtrados por departamento y sexo"""
-    hist_filtrado = df_hist[
-        (df_hist['Departamento'] == departamento) &
-        (df_hist['Sexo'] == sexo)
-    ].copy()
-    
-    pred_filtrado = df_pred[
+        (df_pred['Anio'] == year) &
         (df_pred['Departamento'] == departamento) &
         (df_pred['Sexo'] == sexo)
-    ].copy()
-    
-    return hist_filtrado, pred_filtrado
+    )
+    return df_pred[mask]
 
-# Obtener datos para el año seleccionado
-current_pred = get_year_data(df_pred, year, departamento, sexo)
-hist_filtrado, pred_filtrado = get_filtered_data(departamento, sexo)
+def get_historical_data(departamento, sexo):
+    """Obtiene datos históricos para el departamento y sexo seleccionados"""
+    mask = (
+        (df_hist['Departamento'] == departamento) &
+        (df_hist['Sexo'] == sexo)
+    )
+    return df_hist[mask].sort_values('Anio')
+
+def prepare_combined_data(hist_data, pred_data):
+    """Combina y prepara datos históricos y de predicción para visualización"""
+    # Preparar datos históricos
+    df_hist_viz = hist_data[['Anio', 'CasosEstimados']].rename(columns={'CasosEstimados': 'Casos'})
+    df_hist_viz['Tipo'] = 'Histórico'
+    
+    # Preparar datos de predicción
+    df_pred_viz = pred_data[['Anio', 'CasosEstimados_Predichos']].rename(columns={'CasosEstimados_Predichos': 'Casos'})
+    df_pred_viz['Tipo'] = 'Predicción'
+    
+    # Combinar y ordenar
+    df_completo = pd.concat([df_hist_viz, df_pred_viz]).sort_values('Anio')
+    
+    # Calcular promedio histórico
+    prom_hist = df_hist_viz['Casos'].mean() if not df_hist_viz.empty else 0
+    
+    return df_completo, prom_hist
+
+# --- Obtener datos para la selección actual ---
+current_pred = get_current_prediction(year, departamento, sexo)
+hist_data = get_historical_data(departamento, sexo)
+df_completo, prom_hist = prepare_combined_data(hist_data, df_pred[df_pred['Departamento'] == departamento])
 
 # --- Mostrar resultados ---
 if not current_pred.empty:
-    # Extraer valores específicos para el año seleccionado
+    # Extraer valores de la predicción actual
     casos_pred = int(current_pred['CasosEstimados_Predichos'].iloc[0])
-    prom_hist = float(current_pred['PromHist'].iloc[0])
+    prom_hist_pred = float(current_pred['PromHist'].iloc[0])  # Usar el promedio del dataset de predicción
     alerta = current_pred['Alerta'].iloc[0]
     
-    # Calcular diferencia y porcentaje
-    diferencia = casos_pred - prom_hist
-    porcentaje_cambio = (diferencia / prom_hist * 100) if prom_hist > 0 else 0
-
-    # Encabezado de resultados
+    # Calcular diferencias
+    diferencia = casos_pred - prom_hist_pred
+    porcentaje = (diferencia / prom_hist_pred * 100) if prom_hist_pred != 0 else 0
+    
+    # Mostrar encabezado
     st.markdown(f"## 📋 Resultados para {departamento} - {sexo} - {year}")
     
     # Métricas principales
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3 = st.columns(3)
     
     with col1:
         st.metric(
             "🎯 Casos Predichos", 
             f"{casos_pred:,}",
-            delta=f"{diferencia:+,.0f}" if diferencia != 0 else None
+            delta=f"{diferencia:+,.0f} ({porcentaje:+.1f}%)"
         )
     
     with col2:
         st.metric(
             "📊 Promedio Histórico", 
-            f"{prom_hist:,.1f}"
+            f"{prom_hist_pred:,.1f}"
         )
     
     with col3:
-        st.metric(
-            "📈 Diferencia", 
-            f"{diferencia:+,.0f}",
-            delta=f"{porcentaje_cambio:+.1f}%" if porcentaje_cambio != 0 else "0%"
-        )
-    
-    with col4:
         if alerta:
-            st.metric("🚨 Estado", "ALERTA", delta="Fuera de rango")
+            st.metric("🚨 Estado", "ALERTA", delta="Fuera de rango", delta_color="inverse")
         else:
             st.metric("✅ Estado", "NORMAL", delta="Dentro de rango")
 
-    # Mostrar alerta con estilo
+    # Mostrar alerta
     if alerta:
-        st.markdown("""
-        <div class="alert-warning">
-            <strong>⚠️ ¡ALERTA EPIDEMIOLÓGICA!</strong><br>
-            El valor predicho está significativamente fuera del rango histórico esperado.
-            Se recomienda implementar medidas preventivas adicionales.
+        st.markdown(f"""
+        <div class="alert-danger">
+            <h4>⚠️ Alerta Epidemiológica Detectada</h4>
+            <p>Los casos predichos para {year} ({casos_pred}) están significativamente fuera del rango histórico promedio ({prom_hist_pred:.1f}).</p>
+            <p>Diferencia: <strong>{diferencia:+,.0f} casos</strong> ({porcentaje:+.1f}%)</p>
         </div>
         """, unsafe_allow_html=True)
     else:
-        st.markdown("""
+        st.markdown(f"""
         <div class="alert-success">
-            <strong>✅ Situación Normal</strong><br>
-            El valor predicho está dentro del rango histórico esperado.
-            Continuar con las medidas preventivas actuales.
+            <h4>✅ Situación Normal</h4>
+            <p>Los casos predichos para {year} están dentro del rango histórico esperado.</p>
+            <p>Diferencia: <strong>{diferencia:+,.0f} casos</strong> ({porcentaje:+.1f}%)</p>
         </div>
         """, unsafe_allow_html=True)
 
-    # --- Gráficos mejorados ---
+    # --- Visualización de datos ---
     st.markdown("---")
-    st.markdown(f"## 📊 Visualización: {tipo_grafico}")
-
-    # Preparar datos combinados para visualización
-    df_hist_viz = hist_filtrado[['Anio', 'CasosEstimados']].rename(columns={'CasosEstimados': 'Casos'})
-    df_hist_viz['Tipo'] = 'Histórico'
-    df_hist_viz['Destacado'] = False
+    st.markdown(f"## 📊 Evolución Temporal - {departamento} ({sexo})")
     
-    df_pred_viz = pred_filtrado[['Anio', 'CasosEstimados_Predichos']].rename(columns={'CasosEstimados_Predichos': 'Casos'})
-    df_pred_viz['Tipo'] = 'Predicción'
-    df_pred_viz['Destacado'] = df_pred_viz['Anio'] == year
-    
-    df_completo = pd.concat([df_hist_viz, df_pred_viz]).sort_values('Anio').reset_index(drop=True)
-
-    # Gráfico de Barras - Comparación específica del año
+    # Gráfico de Barras (comparación específica)
     if tipo_grafico == "Barras":
-        # Obtener datos históricos del año si existen
-        hist_año = hist_filtrado[hist_filtrado['Anio'] == year]
-        
-        datos_barras = []
-        datos_barras.append({
-            'Categoría': 'Promedio Histórico',
-            'Casos': prom_hist,
-            'Color': 'Promedio'
-        })
-        datos_barras.append({
-            'Categoría': f'Predicción {year}',
-            'Casos': casos_pred,
-            'Color': 'Predicción'
+        # Datos para el gráfico de barras
+        bar_data = pd.DataFrame({
+            'Tipo': ['Promedio Histórico', 'Predicción'],
+            'Casos': [prom_hist_pred, casos_pred],
+            'Color': ['#1f77b4', '#ff7f0e']
         })
         
-        # Si hay datos históricos para el año, agregarlos
-        if not hist_año.empty:
-            datos_barras.append({
-                'Categoría': f'Histórico {year}',
-                'Casos': int(hist_año['CasosEstimados'].iloc[0]),
-                'Color': 'Histórico'
-            })
-        
-        df_barras = pd.DataFrame(datos_barras)
-        
-        chart = alt.Chart(df_barras).mark_bar(size=80).encode(
-            x=alt.X('Categoría:N', title='', axis=alt.Axis(labelAngle=-45)),
+        chart = alt.Chart(bar_data).mark_bar(size=60).encode(
+            x=alt.X('Tipo:N', title='', axis=alt.Axis(labelAngle=0)),
             y=alt.Y('Casos:Q', title='Número de Casos'),
-            color=alt.Color('Color:N', 
-                          scale=alt.Scale(domain=['Promedio', 'Predicción', 'Histórico'], 
-                                        range=["#1f77b4", "#ff7f0e", "#2ca02c"]),
-                          legend=alt.Legend(title="Tipo de Dato")),
-            tooltip=['Categoría:N', 'Casos:Q']
+            color=alt.Color('Color:N', scale=alt.Scale(range=['#1f77b4', '#ff7f0e']), legend=None),
+            tooltip=['Tipo:N', 'Casos:Q']
         ).properties(
-            title=f"Comparación de Casos - {departamento} ({sexo}) - {year}",
-            width=700,
+            title=f"Comparación para {year}",
+            width=600,
             height=400
         )
+        
+        # Agregar texto con los valores
+        text = chart.mark_text(
+            align='center',
+            baseline='bottom',
+            dy=-5,
+            fontSize=14
+        ).encode(
+            text='Casos:Q'
+        )
+        
+        chart = (chart + text)
 
-    # Gráfico de Líneas con año destacado
+    # Gráfico de Líneas (evolución completa)
     elif tipo_grafico == "Líneas":
-        # Gráfico base
-        base_chart = alt.Chart(df_completo).mark_line(point=True, strokeWidth=3).encode(
+        # Crear gráfico base
+        line_chart = alt.Chart(df_completo).mark_line(point=True).encode(
             x=alt.X('Anio:O', title='Año'),
             y=alt.Y('Casos:Q', title='Número de Casos'),
             color=alt.Color('Tipo:N', 
                           scale=alt.Scale(domain=['Histórico', 'Predicción'], 
                                         range=['#1f77b4', '#d62728']),
-                          legend=alt.Legend(title="Tipo de Dato")),
+                          legend=alt.Legend(title="Tipo de Datos")),
             tooltip=['Anio:O', 'Casos:Q', 'Tipo:N']
         )
         
-        # Punto destacado para el año seleccionado
-        highlight_chart = alt.Chart(df_completo[df_completo['Destacado']]).mark_circle(
-            size=300, stroke='black', strokeWidth=3, opacity=0.8
+        # Destacar el punto del año seleccionado
+        highlight = alt.Chart(df_completo[df_completo['Anio'] == year]).mark_circle(
+            size=100, color='red'
         ).encode(
             x='Anio:O',
             y='Casos:Q',
-            color=alt.Color('Tipo:N', 
-                          scale=alt.Scale(domain=['Histórico', 'Predicción'], 
-                                        range=['#1f77b4', '#d62728'])),
             tooltip=['Anio:O', 'Casos:Q', 'Tipo:N']
         )
         
         # Línea vertical para marcar el año seleccionado
-        rule = alt.Chart(pd.DataFrame({'year': [year]})).mark_rule(
-            color='red', strokeWidth=2, strokeDash=[5, 5]
+        rule = alt.Chart(pd.DataFrame({'x': [year]})).mark_rule(
+            color='red', strokeDash=[3, 3]
         ).encode(
-            x=alt.X('year:O')
+            x='x:O'
         )
         
-        chart = (base_chart + highlight_chart + rule).properties(
-            title=f"Evolución Temporal - {departamento} ({sexo}) - Año Destacado: {year}",
+        chart = (line_chart + highlight + rule).properties(
             width=800,
             height=450
-        ).resolve_scale(color='independent')
+        )
 
     # Gráfico de Área
-    else:  # Área
+    else:
         chart = alt.Chart(df_completo).mark_area(opacity=0.7, line=True).encode(
             x=alt.X('Anio:O', title='Año'),
             y=alt.Y('Casos:Q', title='Número de Casos'),
             color=alt.Color('Tipo:N', 
                           scale=alt.Scale(domain=['Histórico', 'Predicción'], 
                                         range=['#1f77b4', '#d62728']),
-                          legend=alt.Legend(title="Tipo de Dato")),
+                          legend=alt.Legend(title="Tipo de Datos")),
             tooltip=['Anio:O', 'Casos:Q', 'Tipo:N']
         ).properties(
-            title=f"Tendencia de Casos - {departamento} ({sexo})",
             width=800,
             height=450
         )
         
         # Agregar línea vertical para el año seleccionado
-        rule = alt.Chart(pd.DataFrame({'year': [year]})).mark_rule(
-            color='red', strokeWidth=2, strokeDash=[5, 5]
+        rule = alt.Chart(pd.DataFrame({'x': [year]})).mark_rule(
+            color='red', strokeDash=[3, 3]
         ).encode(
-            x=alt.X('year:O')
+            x='x:O'
         )
         
         chart = chart + rule
 
     st.altair_chart(chart, use_container_width=True)
 
-    # --- Análisis adicional ---
+    # --- Análisis detallado ---
     st.markdown("---")
-    st.markdown("## 📈 Análisis Detallado")
+    st.markdown("## 🔍 Análisis Detallado")
     
     col1, col2 = st.columns(2)
     
     with col1:
-        st.markdown("### 📊 Estadísticas del Departamento")
-        if not hist_filtrado.empty:
-            casos_min = hist_filtrado['CasosEstimados'].min()
-            casos_max = hist_filtrado['CasosEstimados'].max()
-            casos_std = hist_filtrado['CasosEstimados'].std()
+        st.markdown("### 📈 Estadísticas Históricas")
+        if not hist_data.empty:
+            casos_min = hist_data['CasosEstimados'].min()
+            casos_max = hist_data['CasosEstimados'].max()
+            casos_avg = hist_data['CasosEstimados'].mean()
+            casos_std = hist_data['CasosEstimados'].std()
             
-            st.write(f"**Casos mínimos históricos:** {casos_min}")
-            st.write(f"**Casos máximos históricos:** {casos_max}")
-            st.write(f"**Desviación estándar:** {casos_std:.1f}")
-            st.write(f"**Rango normal:** {prom_hist - casos_std:.1f} - {prom_hist + casos_std:.1f}")
+            st.write(f"**Mínimo histórico:** {casos_min:,.0f} casos")
+            st.write(f"**Máximo histórico:** {casos_max:,.0f} casos")
+            st.write(f"**Promedio histórico:** {casos_avg:,.1f} casos")
+            st.write(f"**Desviación estándar:** {casos_std:,.1f}")
+            
+            # Mostrar rango normal (promedio ± 1 desviación estándar)
+            st.write(f"**Rango normal esperado:** {casos_avg-casos_std:,.1f} - {casos_avg+casos_std:,.1f} casos")
     
     with col2:
-        st.markdown("### 🎯 Evaluación de Riesgo")
-        if abs(porcentaje_cambio) < 5:
+        st.markdown("### 🧮 Evaluación de Riesgo")
+        if diferencia > 0:
+            st.write(f"**Predicción por encima del promedio:** {diferencia:,.0f} casos ({porcentaje:+.1f}%)")
+        else:
+            st.write(f"**Predicción por debajo del promedio:** {abs(diferencia):,.0f} casos ({porcentaje:+.1f}%)")
+        
+        # Clasificación de riesgo basada en desviaciones estándar
+        if casos_std > 0:
+            desviaciones = abs(casos_pred - casos_avg) / casos_std
+        else:
+            desviaciones = 0
+            
+        if desviaciones < 1:
             riesgo = "🟢 Bajo"
-            descripcion = "La predicción está muy cerca del promedio histórico."
-        elif abs(porcentaje_cambio) < 15:
+            explicacion = "Dentro del rango histórico normal"
+        elif desviaciones < 2:
             riesgo = "🟡 Moderado"
-            descripcion = "La predicción muestra una variación moderada."
+            explicacion = "Fuera del rango normal pero dentro de lo esperado"
         else:
             riesgo = "🔴 Alto"
-            descripcion = "La predicción muestra una variación significativa."
+            explicacion = "Desviación significativa del patrón histórico"
         
         st.write(f"**Nivel de riesgo:** {riesgo}")
-        st.write(f"**Variación:** {porcentaje_cambio:+.1f}%")
-        st.write(f"**Descripción:** {descripcion}")
+        st.write(f"**Explicación:** {explicacion}")
 
-    # --- Tabla de datos del año seleccionado ---
+    # --- Tablas de datos ---
     st.markdown("---")
-    st.markdown(f"### 📋 Datos Específicos del Año {year}")
+    st.markdown("## 📋 Datos Detallados")
     
-    # Crear tabla con datos del año seleccionado
-    datos_año = []
-    
-    # Datos históricos si existen
-    hist_año = hist_filtrado[hist_filtrado['Anio'] == year]
-    if not hist_año.empty:
-        datos_año.append({
-            'Tipo': 'Histórico',
-            'Casos': int(hist_año['CasosEstimados'].iloc[0]),
-            'Tendencia': hist_año['Tendencia'].iloc[0] if 'Tendencia' in hist_año.columns else 'N/A'
-        })
-    
-    # Datos de predicción
-    datos_año.append({
-        'Tipo': 'Predicción',
-        'Casos': casos_pred,
-        'Tendencia': 'Alerta' if alerta else 'Normal'
+    # Tabla con datos del año seleccionado
+    st.markdown(f"### Datos para {year}")
+    datos_año = pd.DataFrame({
+        'Tipo': ['Histórico', 'Predicción', 'Promedio Histórico'],
+        'Casos': [
+            hist_data[hist_data['Anio'] == year]['CasosEstimados'].iloc[0] if not hist_data[hist_data['Anio'] == year].empty else 'N/A',
+            casos_pred,
+            prom_hist_pred
+        ],
+        'Estado': [
+            'Real' if not hist_data[hist_data['Anio'] == year].empty else 'No disponible',
+            'Alerta' if alerta else 'Normal',
+            'Referencia'
+        ]
     })
+    st.dataframe(datos_año, hide_index=True, use_container_width=True)
     
-    # Promedio histórico para referencia
-    datos_año.append({
-        'Tipo': 'Promedio Histórico',
-        'Casos': int(prom_hist),
-        'Tendencia': 'Referencia'
-    })
-    
-    df_año = pd.DataFrame(datos_año)
-    st.dataframe(df_año, use_container_width=True)
-
     # Tabla completa expandible
-    with st.expander("📊 Ver todos los datos históricos y predicciones"):
-        df_completo_tabla = df_completo.rename(columns={
+    with st.expander("📊 Ver todos los datos históricos y de predicción"):
+        st.dataframe(df_completo.rename(columns={
             'Anio': 'Año',
-            'Casos': 'Casos',
+            'Casos': 'Número de Casos',
             'Tipo': 'Tipo de Dato'
-        }).drop('Destacado', axis=1)
-        st.dataframe(df_completo_tabla, use_container_width=True)
-
-    # --- Información sobre la metodología ---
-    with st.expander("ℹ️ Información sobre la metodología"):
-        st.markdown("""
-        **Cálculo del Promedio Histórico:**
-        - Se calcula el promedio de casos estimados de los años históricos disponibles (2015-2024)
-        
-        **Criterio de Alerta:**
-        - Se genera una alerta cuando la predicción supera significativamente el promedio histórico
-        - El umbral se basa en análisis estadístico de la variabilidad histórica
-        
-        **Fuente de Datos:**
-        - Datos históricos basados en registros epidemiológicos del MINSA
-        - Predicciones generadas mediante modelos de aprendizaje estadístico
-        
-        **Limitaciones:**
-        - Las predicciones son estimaciones basadas en tendencias históricas
-        - Factores externos pueden influir en los casos reales
-        - Se recomienda usar como herramienta de apoyo, no como única fuente de decisión
-        """)
+        }), use_container_width=True)
 
 else:
-    st.error("❌ No hay datos disponibles para la combinación seleccionada.")
+    st.error("No se encontraron datos para la combinación seleccionada.")
     
-    # Mostrar información de depuración
-    st.markdown("### 🔍 Información de depuración:")
-    st.write(f"Año seleccionado: {year}")
-    st.write(f"Departamento seleccionado: {departamento}")
-    st.write(f"Sexo seleccionado: {sexo}")
-    
-    # Verificar qué datos están disponibles
-    available_combinations = df_pred[
+    # Mostrar opciones disponibles
+    st.markdown("### 🔍 Datos disponibles para:")
+    st.write(f"**Departamento:** {departamento}")
+    available_years_dept = df_pred[
         (df_pred['Departamento'] == departamento) & 
         (df_pred['Sexo'] == sexo)
     ]['Anio'].unique()
     
-    if len(available_combinations) > 0:
-        st.write(f"Años disponibles para {departamento} - {sexo}: {sorted(available_combinations)}")
+    if len(available_years_dept) > 0:
+        st.write(f"Años con datos: {sorted(available_years_dept)}")
     else:
-        st.write(f"No hay datos disponibles para {departamento} - {sexo}")
+        st.write("No hay datos para esta combinación de departamento y sexo")
 
 # --- Pie de página ---
 st.markdown("---")
 st.markdown("""
-<div style='text-align: center; color: #666; padding: 2rem;'>
-    <h4>🦠 Sistema de Alerta Temprana VIH - Perú</h4>
-    <p>Desarrollado con Streamlit para el Proyecto de Aprendizaje Estadístico sobre VIH.<br>
-    Inspirado en la <a href='https://app7.dge.gob.pe/maps/sala_vih/' target='_blank'>Sala Situacional VIH del MINSA Perú</a>.</p>
-    <p><small>Versión 3.1 - Actualizado con mejoras de visualización y análisis</small></p>
+<div style="text-align: center; padding: 1rem; color: #666;">
+    <p>Sistema de Alerta Temprana VIH - Perú | Datos simulados para predicciones 2025-2030</p>
+    <p><small>Desarrollado con Streamlit | Versión 3.2</small></p>
 </div>
 """, unsafe_allow_html=True)
