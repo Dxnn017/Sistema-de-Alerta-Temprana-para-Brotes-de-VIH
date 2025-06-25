@@ -7,7 +7,7 @@ import numpy as np
 @st.cache_data
 def load_data():
     try:
-        df_pred = pd.read_csv('predicciones_alerta_vih_2025_2030.csv')
+        df_pred = pd.read_csv('predicciones_alerta_vih_2025_2030_simulado.csv')
         df_hist = pd.read_csv('DATASET_VIH.csv')
         
         # Corrección de datos problemáticos de Lima 2024
