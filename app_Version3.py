@@ -1,50 +1,15 @@
 import streamlit as st
 import pandas as pd
 import altair as alt
-import requests
-from io import StringIO
 
-# Cargar datos desde URL
+# Cargar datos
 @st.cache_data
 def load_data():
-    try:
-        # URL del dataset simulado mejorado
-        url = "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/predicciones_alerta_vih_2025_2030_simulado-sJhB4luINPdUPcTCLKSgmVsfrVb0ui.csv"
-        
-        # Cargar desde URL
-        response = requests.get(url)
-        response.raise_for_status()
-        df_pred = pd.read_csv(StringIO(response.text))
-        
-        # Corregir tipos de datos
-        df_pred['Anio'] = pd.to_numeric(df_pred['Anio'], errors='coerce')
-        df_pred['CasosEstimados_Predichos'] = pd.to_numeric(df_pred['CasosEstimados_Predichos'], errors='coerce')
-        df_pred['PromHist'] = pd.to_numeric(df_pred['PromHist'], errors='coerce')
-        df_pred['Alerta'] = df_pred['Alerta'].map({'True': True, 'False': False, True: True, False: False})
-        
-        # Limpiar datos nulos
-        df_pred = df_pred.dropna()
-        
-        # Intentar cargar datos históricos (opcional)
-        try:
-            df_hist = pd.read_csv('DATASET_VIH.csv')
-        except:
-            # Crear datos históricos de ejemplo si no existen
-            df_hist = pd.DataFrame()
-        
-        return df_pred, df_hist
-        
-    except Exception as e:
-        st.error(f"Error cargando datos desde URL: {e}")
-        # Fallback: crear datos de ejemplo
-        return pd.DataFrame(), pd.DataFrame()
+    df_pred = pd.read_csv('predicciones_alerta_vih_2025_2030_simulado.csv')
+    df_hist = pd.read_csv('DATASET_VIH.csv')
+    return df_pred, df_hist
 
 df_pred, df_hist = load_data()
-
-# Verificar que los datos se cargaron
-if df_pred.empty:
-    st.error("❌ No se pudieron cargar los datos.")
-    st.stop()
 
 # Configuración de la página
 st.set_page_config(
@@ -57,8 +22,8 @@ st.set_page_config(
 st.markdown(
     """
     # 🦠 Predicción y Alerta de Casos de VIH en Perú
-    Consulta los **casos estimados y predichos de VIH** por Departamento, Sexo y Año.
-    También puedes ver si hay una **alerta** respecto al promedio histórico.
+    Consulta los *casos estimados y predichos de VIH* por Departamento, Sexo y Año.
+    También puedes ver si hay una *alerta* respecto al promedio histórico.
     """,
     unsafe_allow_html=True
 )
@@ -97,25 +62,25 @@ tipo_grafico = st.sidebar.radio(
 )
 
 # --- Función para obtener datos exactos ---
-def get_exact_data(year, departamento, sexo):
+def get_exact_values(year, departamento, sexo):
     """Obtiene los valores exactos para la combinación seleccionada"""
-    mask = (
+    # Filtrar datos de predicción
+    pred_filtrado = df_pred[
         (df_pred['Anio'] == year) &
         (df_pred['Departamento'] == departamento) &
         (df_pred['Sexo'] == sexo)
-    )
-    exact_data = df_pred[mask]
+    ]
     
-    if not exact_data.empty:
+    if not pred_filtrado.empty:
         return {
-            'casos_pred': int(exact_data['CasosEstimados_Predichos'].iloc[0]),
-            'prom_hist': float(exact_data['PromHist'].iloc[0]),
-            'alerta': bool(exact_data['Alerta'].iloc[0])
+            'casos_pred': int(pred_filtrado['CasosEstimados_Predichos'].iloc[0]),
+            'prom_hist': float(pred_filtrado['PromHist'].iloc[0]),
+            'alerta': bool(pred_filtrado['Alerta'].iloc[0])
         }
     return None
 
 # Obtener valores actuales
-current_values = get_exact_data(year, departamento, sexo)
+current_values = get_exact_values(year, departamento, sexo)
 
 # --- Mostrar resultados ---
 if current_values:
@@ -139,27 +104,21 @@ if current_values:
     st.subheader(f"Visualización: {tipo_grafico}")
 
     # Preparar datos para gráficos
-    # Datos históricos (si existen)
-    if not df_hist.empty:
-        df_hist_filtrado = df_hist[
-            (df_hist['Departamento'] == departamento) &
-            (df_hist['Sexo'] == sexo)
-        ][['Anio', 'CasosEstimados']].rename(columns={'CasosEstimados': 'Casos'})
-    else:
-        df_hist_filtrado = pd.DataFrame()
+    df_hist_filtrado = df_hist[
+        (df_hist['Departamento'] == departamento) &
+        (df_hist['Sexo'] == sexo)
+    ][['Anio', 'CasosEstimados']].rename(columns={'CasosEstimados': 'Casos'})
     
-    # Datos de predicción (2025-2030)
     df_pred_filtrado = df_pred[
         (df_pred['Departamento'] == departamento) &
         (df_pred['Sexo'] == sexo)
     ][['Anio', 'CasosEstimados_Predichos']].rename(columns={'CasosEstimados_Predichos': 'Casos'})
     
-    # Combinar datos históricos y de predicción
     df_completo = pd.concat([df_hist_filtrado, df_pred_filtrado]).sort_values('Anio')
     df_completo = df_completo[df_completo['Anio'] <= year]  # Filtrar hasta el año seleccionado
     df_completo['Tipo'] = df_completo['Anio'].apply(lambda x: 'Histórico' if x <= 2024 else 'Predicción')
 
-    # Gráfico de Barras (comparación año actual)
+    # Gráfico de Barras
     if tipo_grafico == "Barras":
         chart_data = pd.DataFrame({
             'Tipo': ['Promedio histórico', 'Predicción'],
@@ -175,7 +134,7 @@ if current_values:
             height=400
         )
 
-    # Gráfico de Líneas (evolución)
+    # Gráfico de Líneas
     elif tipo_grafico == "Líneas":
         chart = alt.Chart(df_completo).mark_line(point=True).encode(
             x=alt.X('Anio:O', title='Año'),
